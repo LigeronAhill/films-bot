@@ -95,3 +95,81 @@ impl Storage {
         Ok(())
     }
 }
+
+impl Storage {
+    #[instrument(name = "get users serials watch list", skip(self))]
+    pub async fn get_users_serials_watch_list(&self, user_id: u64) -> Result<Vec<Serial>> {
+        let mut cursor = self
+            .serials
+            .find(doc! {"user_id": user_id as i64, "watched": false})
+            .await?;
+        let mut result = Vec::new();
+        while let Some(serial) = cursor.try_next().await? {
+            result.push(serial);
+        }
+        Ok(result)
+    }
+    #[instrument(name = "get users watched serials list", skip(self))]
+    pub async fn get_users_watched_serials_list(&self, user_id: u64) -> Result<Vec<Serial>> {
+        let mut cursor = self
+            .serials
+            .find(doc! {"user_id": user_id as i64, "watched": true})
+            .await?;
+        let mut result = Vec::new();
+        while let Some(serial) = cursor.try_next().await? {
+            result.push(serial);
+        }
+        Ok(result)
+    }
+    #[instrument(name = "add serial to watch list", skip(self))]
+    pub async fn add_serial_to_watch_list(&self, user_id: u64, serial_id: i64) -> Result<()> {
+        let serial = Serial::new(user_id, serial_id);
+        let current_watch_list = self.get_users_serials_watch_list(user_id).await?;
+        if !current_watch_list.is_empty() {
+            for serial in current_watch_list {
+                if serial.serial_id == serial_id {
+                    return Ok(());
+                }
+            }
+        }
+        self.serials.insert_one(serial).await?;
+        Ok(())
+    }
+    #[instrument(name = "mark serial as watched", skip(self))]
+    pub async fn watch_serial(&self, user_id: u64, serial_id: i64) -> Result<()> {
+        let filter = doc! {"user_id": user_id as i64, "serial_id": serial_id};
+        let update = doc! {"$set": doc!{"watched": true}};
+        let res = self.serials.update_one(filter, update).await?;
+        tracing::info!("Updated {} serials in db", res.modified_count);
+        Ok(())
+    }
+    #[instrument(name = "mark serial as unwatched", skip(self))]
+    pub async fn unwatch_serial(&self, user_id: u64, serial_id: i64) -> Result<()> {
+        let filter = doc! {"user_id": user_id as i64, "serial_id": serial_id};
+        let none_rate: Option<f64> = None;
+        let update = doc! {"$set": doc!{"watched": false, "my_rating": none_rate}};
+        let res = self.serials.update_one(filter, update).await?;
+        tracing::info!("Updated {} serials in db", res.modified_count);
+        Ok(())
+    }
+    #[instrument(name = "rate serial", skip(self))]
+    pub async fn rate_serial(&self, user_id: u64, serial_id: i64, rate: f64) -> Result<()> {
+        let filter = doc! {"user_id": user_id as i64, "serial_id": serial_id};
+        let update = doc! {"$set": doc!{"my_rating": Some(rate)}};
+        let res = self.serials.update_one(filter, update).await?;
+        tracing::info!("Updated {} serials in db", res.modified_count);
+        Ok(())
+    }
+    #[instrument(name = "delete serial from watch list", skip(self))]
+    pub async fn delete_serial_from_watch_list(&self, user_id: u64, serial_id: i64) -> Result<()> {
+        let filter = doc! {
+            "$and": [
+                doc! { "user_id": user_id as i64},
+                doc! {"serial_id": serial_id},
+            ]
+        };
+        let result = self.serials.delete_one(filter).await?;
+        tracing::info!("Deleted {} documents", result.deleted_count);
+        Ok(())
+    }
+}

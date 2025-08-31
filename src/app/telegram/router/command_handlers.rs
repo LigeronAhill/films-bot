@@ -19,11 +19,14 @@ pub async fn start_command_handler(bot: Bot, dialogue: MyDialogue, msg: Message)
 }
 pub async fn help_command_handler(bot: Bot, msg: Message) -> Result<()> {
     bot.send_message(msg.chat.id, Command::descriptions().to_string())
+        .reply_markup(TextCommand::keyboard())
         .await?;
     Ok(())
 }
 pub async fn cancel_command_handler(bot: Bot, dialogue: MyDialogue, msg: Message) -> Result<()> {
     dialogue.exit().await?;
-    bot.send_message(msg.chat.id, "CANCELED").await?;
+    bot.send_message(msg.chat.id, "CANCELED")
+        .reply_markup(TextCommand::keyboard())
+        .await?;
     Ok(())
 }

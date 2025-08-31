@@ -20,6 +20,14 @@ const MARK_FILM_WATCHED_CALLBACK: &str = "mark_film_watched";
 const MARK_FILM_UNWATCHED_CALLBACK: &str = "mark_film_unwatched";
 const RATE_FILM_CALLBACK: &str = "rate_film";
 const DELETE_FILM_CALLBACK: &str = "delete_film";
+const SEARCH_SERIAL_CALLBACK: &str = "search_serials";
+const GET_SERIAL_DETAILS_CALLBACK: &str = "get_serials_details";
+const GET_SERIAL_CREDITS_CALLBACK: &str = "get_serials_credits";
+const ADD_SERIAL_TO_WATCH_LIST_CALLBACK: &str = "add_serial_to_watch_list";
+const MARK_SERIAL_WATCHED_CALLBACK: &str = "mark_serial_watched";
+const MARK_SERIAL_UNWATCHED_CALLBACK: &str = "mark_serial_unwatched";
+const RATE_SERIAL_CALLBACK: &str = "rate_serial";
+const DELETE_SERIAL_CALLBACK: &str = "delete_serial";
 
 #[derive(Clone, Default)]
 pub enum State {
@@ -28,6 +36,10 @@ pub enum State {
     FilmTitleReceived,
     FilmRateReceived {
         film_id: i64,
+    },
+    SerialTitleReceived,
+    SerialRateReceived {
+        serial_id: i64,
     },
 }
 
@@ -45,7 +57,8 @@ pub enum Command {
     Cancel,
 }
 
-const TO_WATCH: &str = "🤔 Что посмотреть?";
+const FILM_TO_WATCH: &str = "🤔 Отложенные фильмы";
+const SERIAL_TO_WATCH: &str = "🤔 Отложенные сериалы";
 const SEARCH_FILM: &str = "🔎 Найти фильм";
 const WATCHED_FILMS: &str = "💼 Просмотренные фильмы";
 const SEARCH_SERIAL: &str = "🔎 Найти сериал";
@@ -53,7 +66,8 @@ const WATCHED_SERIALS: &str = "💼 Просмотренные сериалы";
 
 #[derive(Debug, Clone)]
 pub enum TextCommand {
-    ToWatch,
+    FilmsToWatch,
+    SerialsToWatch,
     SearchFilm,
     WatchedFilms,
     SearchSerial,
@@ -62,7 +76,10 @@ pub enum TextCommand {
 impl TextCommand {
     pub fn keyboard() -> KeyboardMarkup {
         KeyboardMarkup::default()
-            .append_row(vec![TextCommand::ToWatch.into()])
+            .append_row(vec![
+                TextCommand::FilmsToWatch.into(),
+                TextCommand::SerialsToWatch.into(),
+            ])
             .append_row(vec![
                 TextCommand::SearchFilm.into(),
                 TextCommand::SearchSerial.into(),
@@ -82,7 +99,8 @@ impl From<TextCommand> for KeyboardButton {
 impl Display for TextCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let string = match self {
-            TextCommand::ToWatch => TO_WATCH,
+            TextCommand::FilmsToWatch => FILM_TO_WATCH,
+            TextCommand::SerialsToWatch => SERIAL_TO_WATCH,
             TextCommand::SearchFilm => SEARCH_FILM,
             TextCommand::WatchedFilms => WATCHED_FILMS,
             TextCommand::SearchSerial => SEARCH_SERIAL,
@@ -95,7 +113,8 @@ impl FromStr for TextCommand {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
-            TO_WATCH => Ok(Self::ToWatch),
+            FILM_TO_WATCH => Ok(Self::FilmsToWatch),
+            SERIAL_TO_WATCH => Ok(Self::SerialsToWatch),
             SEARCH_FILM => Ok(Self::SearchFilm),
             WATCHED_FILMS => Ok(Self::WatchedFilms),
             SEARCH_SERIAL => Ok(Self::SearchSerial),
@@ -116,6 +135,15 @@ pub enum MyCallback {
     MarkFilmUnWatched { id: i64 },
     RateFilm { id: i64 },
     DeleteFilm { id: i64 },
+    SearchSerialNextPage { search_string: String, page: u8 },
+    SearchSerialPreviousPage { search_string: String, page: u8 },
+    GetSerialDetails { id: i64 },
+    GetSerialCredits { id: i64 },
+    AddSerialToWatchList { id: i64 },
+    MarkSerialWatched { id: i64 },
+    MarkSerialUnWatched { id: i64 },
+    RateSerial { id: i64 },
+    DeleteSerial { id: i64 },
 }
 impl MyCallback {
     fn data(&self) -> String {
@@ -138,6 +166,25 @@ impl MyCallback {
             MyCallback::RateFilm { id } => format!("{RATE_FILM_CALLBACK}:{id}"),
             MyCallback::MarkFilmUnWatched { id } => format!("{MARK_FILM_UNWATCHED_CALLBACK}:{id}"),
             MyCallback::DeleteFilm { id } => format!("{DELETE_FILM_CALLBACK}:{id}"),
+            MyCallback::SearchSerialNextPage {
+                search_string,
+                page,
+            }
+            | MyCallback::SearchSerialPreviousPage {
+                search_string,
+                page,
+            } => format!("{SEARCH_SERIAL_CALLBACK}:{search_string}:{page}"),
+            MyCallback::GetSerialDetails { id } => format!("{GET_SERIAL_DETAILS_CALLBACK}:{id}"),
+            MyCallback::GetSerialCredits { id } => format!("{GET_SERIAL_CREDITS_CALLBACK}:{id}"),
+            MyCallback::AddSerialToWatchList { id } => {
+                format!("{ADD_SERIAL_TO_WATCH_LIST_CALLBACK}:{id}")
+            }
+            MyCallback::MarkSerialWatched { id } => format!("{MARK_SERIAL_WATCHED_CALLBACK}:{id}"),
+            MyCallback::MarkSerialUnWatched { id } => {
+                format!("{MARK_SERIAL_UNWATCHED_CALLBACK}:{id}")
+            }
+            MyCallback::RateSerial { id } => format!("{RATE_SERIAL_CALLBACK}:{id}"),
+            MyCallback::DeleteSerial { id } => format!("{DELETE_SERIAL_CALLBACK}:{id}"),
         }
     }
 }
@@ -150,15 +197,28 @@ impl Display for MyCallback {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let string = match self {
             MyCallback::Cancel => "🔙 Вернуться в меню",
-            MyCallback::SearchFilmsNextPage { .. } => "⏭️ Дальше",
-            MyCallback::SearchFilmsPreviousPage { .. } => "⏮️ Назад",
-            MyCallback::GetFilmsDetails { .. } => "🕵️ Подробнее",
-            MyCallback::AddFilmToWatchList { .. } => "🤔 Буду смотреть",
-            MyCallback::GetFilmsCredits { .. } => "⚙️ Титры",
-            MyCallback::MarkFilmWatched { .. } => "✅ Отметить просмотренным",
-            MyCallback::RateFilm { .. } => "🧮 Поставить оценку",
-            MyCallback::MarkFilmUnWatched { .. } => "👁️  Отметить непросмотренным",
-            MyCallback::DeleteFilm { .. } => "🗑️ Удалить из списка",
+            MyCallback::SearchFilmsNextPage { .. } | MyCallback::SearchSerialNextPage { .. } => {
+                "⏭️ Дальше"
+            }
+            MyCallback::SearchFilmsPreviousPage { .. }
+            | MyCallback::SearchSerialPreviousPage { .. } => "⏮️ Назад",
+            MyCallback::GetFilmsDetails { .. } | MyCallback::GetSerialDetails { .. } => {
+                "🕵️ Подробнее"
+            }
+            MyCallback::AddFilmToWatchList { .. } | MyCallback::AddSerialToWatchList { .. } => {
+                "🤔 Буду смотреть"
+            }
+            MyCallback::GetFilmsCredits { .. } | MyCallback::GetSerialCredits { .. } => "⚙️ Титры",
+            MyCallback::MarkFilmWatched { .. } | MyCallback::MarkSerialWatched { .. } => {
+                "✅ Отметить просмотренным"
+            }
+            MyCallback::RateFilm { .. } | MyCallback::RateSerial { .. } => "🧮 Поставить оценку",
+            MyCallback::MarkFilmUnWatched { .. } | MyCallback::MarkSerialUnWatched { .. } => {
+                "👁️  Отметить непросмотренным"
+            }
+            MyCallback::DeleteFilm { .. } | MyCallback::DeleteSerial { .. } => {
+                "🗑️ Удалить из списка"
+            }
         };
         write!(f, "{string}")
     }
@@ -180,33 +240,71 @@ impl FromStr for MyCallback {
                         });
                     }
                 }
+                SEARCH_SERIAL_CALLBACK => {
+                    if let Some((search_string, page)) = data.split_once(':') {
+                        let page = page.parse()?;
+                        let search_string = search_string.into();
+                        return Ok(Self::SearchSerialNextPage {
+                            search_string,
+                            page,
+                        });
+                    }
+                }
                 GET_FILM_DETAILS_CALLBACK => {
                     let id = data.parse()?;
                     return Ok(Self::GetFilmsDetails { id });
+                }
+                GET_SERIAL_DETAILS_CALLBACK => {
+                    let id = data.parse()?;
+                    return Ok(Self::GetSerialDetails { id });
                 }
                 ADD_FILM_TO_WATCH_LIST_CALLBACK => {
                     let id = data.parse()?;
                     return Ok(Self::AddFilmToWatchList { id });
                 }
+                ADD_SERIAL_TO_WATCH_LIST_CALLBACK => {
+                    let id = data.parse()?;
+                    return Ok(Self::AddSerialToWatchList { id });
+                }
                 GET_FILM_CREDITS_CALLBACK => {
                     let id = data.parse()?;
                     return Ok(Self::GetFilmsCredits { id });
+                }
+                GET_SERIAL_CREDITS_CALLBACK => {
+                    let id = data.parse()?;
+                    return Ok(Self::GetSerialCredits { id });
                 }
                 MARK_FILM_WATCHED_CALLBACK => {
                     let id = data.parse()?;
                     return Ok(Self::MarkFilmWatched { id });
                 }
+                MARK_SERIAL_WATCHED_CALLBACK => {
+                    let id = data.parse()?;
+                    return Ok(Self::MarkSerialWatched { id });
+                }
                 MARK_FILM_UNWATCHED_CALLBACK => {
                     let id = data.parse()?;
                     return Ok(Self::MarkFilmUnWatched { id });
+                }
+                MARK_SERIAL_UNWATCHED_CALLBACK => {
+                    let id = data.parse()?;
+                    return Ok(Self::MarkSerialUnWatched { id });
                 }
                 RATE_FILM_CALLBACK => {
                     let id = data.parse()?;
                     return Ok(Self::RateFilm { id });
                 }
+                RATE_SERIAL_CALLBACK => {
+                    let id = data.parse()?;
+                    return Ok(Self::RateSerial { id });
+                }
                 DELETE_FILM_CALLBACK => {
                     let id = data.parse()?;
                     return Ok(Self::DeleteFilm { id });
+                }
+                DELETE_SERIAL_CALLBACK => {
+                    let id = data.parse()?;
+                    return Ok(Self::DeleteSerial { id });
                 }
                 _ => {}
             }
